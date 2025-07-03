@@ -1,0 +1,154 @@
+- hosts: all
+  gather_facts: no
+  tasks:
+    - name: Install Python
+      ansible.builtin.raw: apt-get install -y python3 python3-debian
+
+- hosts: db
+  tasks:
+    - name: Add Percona repo
+      ansible.builtin.apt:
+        deb: "https://repo.percona.com/apt/percona-release_latest.{{ ansible_distribution_release }}_all.deb"
+
+    - name: Add Percona PostgreSQL repo
+      ansible.builtin.command: percona-release setup ppg-17
+      args:
+        creates: /etc/apt/sources.list.d/percona-ppg-17-release.list
+
+    - name: Create createcluster config dir
+      ansible.builtin.file:
+        path: /etc/postgresql-common/createcluster.d
+        state: directory
+        recurse: true
+
+    - name: Do not create a main cluster by default
+      ansible.builtin.copy:
+        dest: /etc/postgresql-common/createcluster.d/no-main.conf
+        src: no-main.conf
+
+    - name: Install dependencies
+      ansible.builtin.apt:
+        pkg:
+          - openssh-server
+          - percona-patroni
+          - percona-postgresql-17
+        cache_valid_time: 1
+
+    - name: Add Patroni config
+      ansible.builtin.template:
+        dest: /etc/patroni/patroni.yml
+        src: patroni.yml.j2
+        mode: "600"
+        owner: postgres
+      vars:
+        secret: hunter2
+
+    - name: Add cluster setup script
+      ansible.builtin.copy:
+        dest: /usr/local/bin/setup_cluster.sh
+        src: setup_cluster.sh
+        mode: "775"
+
+    - name: Create /root/.config/patroni
+      ansible.builtin.file:
+        path: /root/.config/patroni
+        state: directory
+        recurse: true
+
+    - name: Add patronictl config
+      ansible.builtin.copy:
+        dest: /root/.config/patroni/patronictl.yaml
+        src: patronictl.yaml
+        mode: "600"
+
+    - name: Enable Patroni
+      ansible.builtin.service:
+        name: patroni
+        enabled: true
+        state: started
+
+- hosts: pgbackrest
+  tasks:
+    - name: Add Percona repo
+      ansible.builtin.apt:
+        deb: "https://repo.percona.com/apt/percona-release_latest.{{ ansible_distribution_release }}_all.deb"
+
+    - name: Add Percona PostgreSQL repo
+      ansible.builtin.command: percona-release setup ppg-17
+      args:
+        creates: /etc/apt/sources.list.d/percona-ppg-17-release.list
+
+    - name: Install PgBackrest
+      ansible.builtin.apt:
+        pkg: percona-pgbackrest
+        cache_valid_time: 1
+
+- hosts: keyring
+  tasks:
+    - name: Install dependencies
+      ansible.builtin.apt:
+        pkg:
+          - jq
+          - opensc
+          - softhsm
+      register: softhsm_install
+
+    - name: Install OpenBao
+      ansible.builtin.apt:
+        deb: "https://github.com/openbao/openbao/releases/download/v{{ openbao_version }}/bao-hsm_{{ openbao_version}}_linux_{{ openbao_architecture_map[ansible_architecture] }}.deb"
+
+    - name: Add openbao to the softhsm group
+      user:
+        name: openbao
+        groups: softhsm
+        append: yes
+
+    - name: Generate a softhsm slot
+      ansible.builtin.command: sudo -u openbao softhsm2-util --init-token --free --label OpenBao --so-pin 1234 --pin 4321
+      when: softhsm_install.changed
+
+    - name: Generate an unseal key
+      ansible.builtin.command: sudo -u openbao pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so --token-label OpenBao --so-pin 1234 --pin 4321 --keypairgen --key-type rsa:4096 --label bao-root-key-rsa
+      when: softhsm_install.changed
+
+    - name: Add OpenBao config
+      ansible.builtin.copy:
+        dest: /etc/openbao/openbao.hcl
+        src: openbao.hcl
+
+    - name: Enable OpenBao
+      ansible.builtin.service:
+        name: openbao
+        enabled: true
+        state: started
+
+    - name: Initialize OpenBao
+      ansible.builtin.shell: bao operator init -address http://localhost:8200 -format=json | jq -r .root_token > /root/.vault-token
+      args:
+        creates: /root/.vault-token
+      register: init_openbao
+
+    - name: Add kv2 secrets path
+      ansible.builtin.command: bao secrets enable -address http://localhost:8200 -version=2 kv
+      when: init_openbao.changed
+  vars:
+      openbao_version: 2.3.1
+      openbao_architecture_map:
+        x86_64: amd64
+
+- hosts: etcd
+  tasks:
+    - name: Install etcd
+      ansible.builtin.apt:
+        pkg: etcd-server
+
+    - name: Add etcd config
+      ansible.builtin.template:
+        dest: /etc/default/etcd
+        src: etcd.j2
+      notify: Restart etcd
+  handlers:
+    - name: Restart etcd
+      service:
+        name: etcd
+        state: restarted

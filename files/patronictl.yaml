@@ -1,0 +1,3 @@
+scope: tde
+etcd3:
+  host: etcd1:2379

@@ -1,0 +1,58 @@
+scope: tde
+name: {{ansible_host}}
+restapi:
+  listen: 0.0.0.0:8008
+  connect_address: {{ansible_host}}:8008
+etcd3:
+  host: etcd1:2379
+bootstrap:
+  dcs:
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 10
+    maximum_lag_on_failover: 1048576
+    master_start_timeout: 300
+    postgresql:
+      use_pg_rewind: true
+      #parameters:
+      #  archive_mode: "on"
+      #  archive_timeout: 600s
+      #  archive_command: "cp -f %p /home/postgres/archived/%f"
+      #recovery_conf:
+      #  restore_command: cp /home/postgres/archived/%f %p
+      pg_hba:
+        - local all all peer
+        - host all all 0.0.0.0/0 scram-sha-256
+        - host all all ::/0 scram-sha-256
+        - local replication all peer
+        - host replication all 0.0.0.0/0 scram-sha-256
+        - host replication all ::/0 scram-sha-256
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+    - auth-local: peer
+    - auth-host: scram-sha-256
+    - set: shared_preload_libraries=pg_tde
+  post_init: /usr/local/bin/setup_cluster.sh
+postgresql:
+  listen: 0.0.0.0:5432
+  connect_address: {{ansible_host}}:5432
+  data_dir: /var/lib/postgresql/patroni-17
+  bin_dir: /lib/postgresql/17/bin
+  pgpass: /tmp/patronipgpass
+  authentication:
+    replication:
+      username: replicator
+      password: {{secret}}
+    superuser:
+      username: postgres
+      password: {{secret}}
+  parameters:
+    unix_socket_directories: /var/run/postgresql
+watchdog:
+  mode: off
+tags:
+  nofailover: false
+  noloadbalance: false
+  clonefrom: false
+  nosync: false

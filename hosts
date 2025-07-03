@@ -1,0 +1,14 @@
+pgbackrest
+keyring
+
+[db]
+db1
+db2
+
+[etcd]
+etcd1
+etcd2
+etcd3
+
+[all:vars]
+ansible_connection = community.general.incus
