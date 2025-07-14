@@ -1,5 +1,5 @@
 - hosts: all
-  gather_facts: no
+  gather_facts: false
   tasks:
     - name: Install Python
       ansible.builtin.raw: apt-get install -y python3 python3-debian
@@ -31,8 +31,36 @@
         pkg:
           - openssh-server
           - percona-patroni
+          - percona-pgbackrest
           - percona-postgresql-17
         cache_valid_time: 1
+
+    - name: Disable PgBackRest server
+      ansible.builtin.service:
+        name: percona-pgbackrest
+        enabled: false
+        state: stopped
+
+    - name: Generate SSH keypair for PgBackRest
+      ansible.builtin.user:
+        name: postgres
+        generate_ssh_key: true
+
+    - name: Download public key
+      ansible.builtin.fetch:
+        dest: files/fetch
+        src: /var/lib/postgresql/.ssh/id_rsa.pub
+
+    # TODO: We could download the fingerprint instead
+    - name: Automatically accept fingerprints from new SSH hosts
+      ansible.builtin.copy:
+        dest: /var/lib/postgresql/.ssh/config
+        src: ssh_config
+
+    - name: Add PgBackRest config
+      ansible.builtin.copy:
+        dest: /etc/pgbackrest.conf
+        src: pgbackrest-pg.conf
 
     - name: Add Patroni config
       ansible.builtin.template:
@@ -67,22 +95,6 @@
         enabled: true
         state: started
 
-- hosts: pgbackrest
-  tasks:
-    - name: Add Percona repo
-      ansible.builtin.apt:
-        deb: "https://repo.percona.com/apt/percona-release_latest.{{ ansible_distribution_release }}_all.deb"
-
-    - name: Add Percona PostgreSQL repo
-      ansible.builtin.command: percona-release setup ppg-17
-      args:
-        creates: /etc/apt/sources.list.d/percona-ppg-17-release.list
-
-    - name: Install PgBackrest
-      ansible.builtin.apt:
-        pkg: percona-pgbackrest
-        cache_valid_time: 1
-
 - hosts: keyring
   tasks:
     - name: Install dependencies
@@ -101,7 +113,7 @@
       user:
         name: openbao
         groups: softhsm
-        append: yes
+        append: true
 
     - name: Generate a softhsm slot
       ansible.builtin.command: sudo -u openbao softhsm2-util --init-token --free --label OpenBao --so-pin 1234 --pin 4321
@@ -152,3 +164,70 @@
       service:
         name: etcd
         state: restarted
+
+- hosts: pgbackrest
+  tasks:
+    - name: Add Percona repo
+      ansible.builtin.apt:
+        deb: "https://repo.percona.com/apt/percona-release_latest.{{ ansible_distribution_release }}_all.deb"
+
+    - name: Add Percona PostgreSQL repo
+      ansible.builtin.command: percona-release setup ppg-17
+      args:
+        creates: /etc/apt/sources.list.d/percona-ppg-17-release.list
+
+    - name: Install PgBackRest
+      ansible.builtin.apt:
+        pkg:
+          - openssh-server
+          - percona-pgbackrest
+        cache_valid_time: 1
+
+    - name: Disable PgBackRest server
+      ansible.builtin.service:
+        name: percona-pgbackrest
+        enabled: false
+        state: stopped
+
+    - name: Generate SSH keypair for PgBackRest
+      ansible.builtin.user:
+        name: postgres
+        generate_ssh_key: true
+
+    - name: Download public key
+      ansible.builtin.fetch:
+        dest: files/fetch
+        src: /var/lib/postgresql/.ssh/id_rsa.pub
+
+    # TODO: We could download the fingerprint instead
+    - name: Automatically accept fingerprints from new SSH hosts
+      ansible.builtin.copy:
+        dest: /var/lib/postgresql/.ssh/config
+        src: ssh_config
+
+    - name: Add authorized keys
+      ansible.posix.authorized_key:
+        user: postgres
+        key: "{{ lookup('file', 'fetch/' + item + '/var/lib/postgresql/.ssh/id_rsa.pub') }}"
+      with_items:
+        - db1
+        - db2
+
+    - name: Add PgBackRest config
+      ansible.builtin.copy:
+        dest: /etc/pgbackrest.conf
+        src: pgbackrest-repo.conf
+
+- hosts: db
+  tasks:
+    - name: Add authorized key
+      ansible.posix.authorized_key:
+        user: postgres
+        key: "{{ lookup('file', 'fetch/pgbackrest/var/lib/postgresql/.ssh/id_rsa.pub') }}"
+
+- hosts: pgbackrest
+  tasks:
+    - name: Initialize PgBackRest repo
+      ansible.builtin.command: sudo -u postgres pgbackrest --stanza=tde stanza-create
+      args:
+        creates: /var/lib/pgbackrest/backup/tde/backup.info

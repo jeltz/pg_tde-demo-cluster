@@ -14,12 +14,10 @@ bootstrap:
     master_start_timeout: 300
     postgresql:
       use_pg_rewind: true
-      #parameters:
-      #  archive_mode: "on"
-      #  archive_timeout: 600s
-      #  archive_command: "cp -f %p /home/postgres/archived/%f"
-      #recovery_conf:
-      #  restore_command: cp /home/postgres/archived/%f %p
+      parameters:
+        archive_command: "pgbackrest --stanza=tde archive-push %p"
+        archive_mode: "on"
+        restore_command: "pgbackrest --stanza=tde archive-get %f \"%p\""
       pg_hba:
         - local all all peer
         - host all all 0.0.0.0/0 scram-sha-256
