@@ -4,6 +4,64 @@
     - name: Install Python
       ansible.builtin.raw: apt-get install -y python3 python3-debian
 
+- hosts: keyring
+  tasks:
+    - name: Install dependencies
+      ansible.builtin.apt:
+        pkg:
+          - jq
+          - opensc
+          - softhsm
+      register: softhsm_install
+
+    - name: Install OpenBao
+      ansible.builtin.apt:
+        deb: "https://github.com/openbao/openbao/releases/download/v{{ openbao_version }}/bao-hsm_{{ openbao_version}}_linux_{{ openbao_architecture_map[ansible_architecture] }}.deb"
+
+    - name: Add openbao to the softhsm group
+      user:
+        name: openbao
+        groups: softhsm
+        append: true
+
+    - name: Generate a softhsm slot
+      ansible.builtin.command: sudo -u openbao softhsm2-util --init-token --free --label OpenBao --so-pin 1234 --pin 4321
+      when: softhsm_install.changed
+
+    - name: Generate an unseal key
+      ansible.builtin.command: sudo -u openbao pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so --token-label OpenBao --so-pin 1234 --pin 4321 --keypairgen --key-type rsa:4096 --label bao-root-key-rsa
+      when: softhsm_install.changed
+
+    - name: Add OpenBao config
+      ansible.builtin.copy:
+        dest: /etc/openbao/openbao.hcl
+        src: openbao.hcl
+
+    - name: Enable OpenBao
+      ansible.builtin.service:
+        name: openbao
+        enabled: true
+        state: started
+
+    - name: Initialize OpenBao
+      ansible.builtin.shell: bao operator init -address http://localhost:8200 -format=json | jq -r .root_token > /root/.vault-token
+      args:
+        creates: /root/.vault-token
+      register: init_openbao
+
+    - name: Download root token
+      ansible.builtin.fetch:
+        dest: files/fetch
+        src: /root/.vault-token
+
+    - name: Add kv2 secrets path
+      ansible.builtin.command: bao secrets enable -address http://localhost:8200 -version=2 kv
+      when: init_openbao.changed
+  vars:
+      openbao_version: 2.3.1
+      openbao_architecture_map:
+        x86_64: amd64
+
 - hosts: db
   tasks:
     - name: Add Percona repo
@@ -71,6 +129,13 @@
       vars:
         secret: hunter2
 
+    - name: Add OpenBao root token
+      ansible.builtin.copy:
+        dest: /var/lib/postgresql/vault-token
+        src: fetch/keyring/root/.vault-token
+        owner: postgres
+        mode: '0600'
+
     - name: Add cluster setup script
       ansible.builtin.copy:
         dest: /usr/local/bin/setup_cluster.sh
@@ -94,59 +159,6 @@
         name: patroni
         enabled: true
         state: started
-
-- hosts: keyring
-  tasks:
-    - name: Install dependencies
-      ansible.builtin.apt:
-        pkg:
-          - jq
-          - opensc
-          - softhsm
-      register: softhsm_install
-
-    - name: Install OpenBao
-      ansible.builtin.apt:
-        deb: "https://github.com/openbao/openbao/releases/download/v{{ openbao_version }}/bao-hsm_{{ openbao_version}}_linux_{{ openbao_architecture_map[ansible_architecture] }}.deb"
-
-    - name: Add openbao to the softhsm group
-      user:
-        name: openbao
-        groups: softhsm
-        append: true
-
-    - name: Generate a softhsm slot
-      ansible.builtin.command: sudo -u openbao softhsm2-util --init-token --free --label OpenBao --so-pin 1234 --pin 4321
-      when: softhsm_install.changed
-
-    - name: Generate an unseal key
-      ansible.builtin.command: sudo -u openbao pkcs11-tool --module /usr/lib/softhsm/libsofthsm2.so --token-label OpenBao --so-pin 1234 --pin 4321 --keypairgen --key-type rsa:4096 --label bao-root-key-rsa
-      when: softhsm_install.changed
-
-    - name: Add OpenBao config
-      ansible.builtin.copy:
-        dest: /etc/openbao/openbao.hcl
-        src: openbao.hcl
-
-    - name: Enable OpenBao
-      ansible.builtin.service:
-        name: openbao
-        enabled: true
-        state: started
-
-    - name: Initialize OpenBao
-      ansible.builtin.shell: bao operator init -address http://localhost:8200 -format=json | jq -r .root_token > /root/.vault-token
-      args:
-        creates: /root/.vault-token
-      register: init_openbao
-
-    - name: Add kv2 secrets path
-      ansible.builtin.command: bao secrets enable -address http://localhost:8200 -version=2 kv
-      when: init_openbao.changed
-  vars:
-      openbao_version: 2.3.1
-      openbao_architecture_map:
-        x86_64: amd64
 
 - hosts: etcd
   tasks:
