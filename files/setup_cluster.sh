@@ -10,7 +10,11 @@ SELECT pg_tde_add_global_key_provider_vault_v2('global', 'http://keyring:8200', 
 SELECT pg_tde_create_key_using_global_key_provider('server-key', 'global');
 SELECT pg_tde_set_server_key_using_global_key_provider('server-key', 'global');
 
+SELECT pg_tde_create_key_using_global_key_provider('db-postgres-key', 'global');
+SELECT pg_tde_set_key_using_global_key_provider('db-postgres-key', 'global');
+
 ALTER SYSTEM SET pg_tde.wal_encrypt = on;
+ALTER DATABASE postgres SET default_table_access_method = 'tde_heap';
 SQL
 
 /lib/postgresql/17/bin/pg_ctl restart -D /var/lib/postgresql/patroni-17
