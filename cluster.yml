@@ -116,7 +116,7 @@
 
     - name: Chekcout percona/postgres
       ansible.builtin.git:
-        repo: https://github.com/percona/postgres.git
+        repo: https://github.com/jeltz/postgres.git
         dest: /srv/postgres
         version: TDE_REL_17_STABLE
         depth: 1

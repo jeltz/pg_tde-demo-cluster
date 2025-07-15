@@ -15,9 +15,9 @@ bootstrap:
     postgresql:
       use_pg_rewind: true
       parameters:
-        archive_command: "pgbackrest --stanza=tde archive-push %p"
+        archive_command: "/lib/postgresql/17/bin/pg_tde_archive_decrypt %p pgbackrest --stanza=tde archive-push %p"
         archive_mode: "on"
-        restore_command: "pgbackrest --stanza=tde archive-get %f \"%p\""
+        restore_command: "/lib/postgresql/17/bin/pg_tde_restore_encrypt %f %p pgbackrest --stanza=tde archive-get %f \"%p\""
       pg_hba:
         - local all all peer
         - host all all 0.0.0.0/0 scram-sha-256
