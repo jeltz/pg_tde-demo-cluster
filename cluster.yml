@@ -73,6 +73,15 @@
       args:
         creates: /etc/apt/sources.list.d/percona-ppg-17-release.list
 
+    - name: Add PGDG repo
+      ansible.builtin.deb822_repository:
+        name: pgdg
+        types: deb
+        uris: https://apt.postgresql.org/pub/repos/apt
+        suites: bookworm-pgdg
+        components: main
+        signed_by: https://www.postgresql.org/media/keys/ACCC4CF8.asc
+
     - name: Create createcluster config dir
       ansible.builtin.file:
         path: /etc/postgresql-common/createcluster.d
@@ -88,7 +97,7 @@
       ansible.builtin.apt:
         name:
           - openssh-server
-          - percona-patroni
+          - patroni
           - percona-pgbackrest
           - percona-postgresql-17
         cache_valid_time: 1
@@ -122,7 +131,7 @@
 
     - name: Add Patroni config
       ansible.builtin.template:
-        dest: /etc/patroni/patroni.yml
+        dest: /etc/patroni/config.yml
         src: patroni.yml.j2
         mode: "600"
         owner: postgres
@@ -154,10 +163,9 @@
         src: patronictl.yaml
         mode: "600"
 
-    - name: Enable Patroni
+    - name: Start Patroni
       ansible.builtin.service:
         name: patroni
-        enabled: true
         state: started
 
 - hosts: etcd
