@@ -8,7 +8,7 @@
   tasks:
     - name: Install dependencies
       ansible.builtin.apt:
-        pkg:
+        name:
           - jq
           - opensc
           - softhsm
@@ -86,7 +86,7 @@
 
     - name: Install dependencies
       ansible.builtin.apt:
-        pkg:
+        name:
           - openssh-server
           - percona-patroni
           - percona-pgbackrest
@@ -164,7 +164,7 @@
   tasks:
     - name: Install etcd
       ansible.builtin.apt:
-        pkg: etcd-server
+        name: etcd-server
 
     - name: Add etcd config
       ansible.builtin.template:
@@ -190,7 +190,7 @@
 
     - name: Install PgBackRest
       ansible.builtin.apt:
-        pkg:
+        name:
           - openssh-server
           - percona-pgbackrest
         cache_valid_time: 1
