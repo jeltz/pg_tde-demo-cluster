@@ -99,8 +99,36 @@
           - openssh-server
           - patroni
           - percona-pgbackrest
-          - percona-postgresql-17
         cache_valid_time: 1
+
+    - name: Install build dependencies
+      ansible.builtin.apt:
+        name: percona-postgresql-17
+        state: build-dep
+        cache_valid_time: 1
+
+    - name: Install git and other dependencies
+      ansible.builtin.apt:
+        name:
+          - git
+          - libcurl4-openssl-dev
+        cache_valid_time: 1
+
+    - name: Chekcout percona/postgres
+      ansible.builtin.git:
+        repo: https://github.com/percona/postgres.git
+        dest: /srv/postgres
+        version: TDE_REL_17_STABLE
+        depth: 1
+        force: true
+
+    - name: Configure PostgreSQL
+      ansible.builtin.command: ./configure --prefix=/lib/postgresql/17
+      args:
+        chdir: /srv/postgres
+
+    - name: Build and install PostgreSQL
+      ansible.builtin.command: make -j4 -s -C /srv/postgres install-world
 
     - name: Disable PgBackRest server
       ansible.builtin.service:

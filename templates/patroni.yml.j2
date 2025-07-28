@@ -46,7 +46,7 @@ postgresql:
       username: postgres
       password: {{secret}}
   parameters:
-    unix_socket_directories: /var/run/postgresql
+    unix_socket_directories: /tmp
 watchdog:
   mode: off
 tags:
