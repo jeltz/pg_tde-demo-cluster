@@ -1,5 +1,6 @@
-pgbackrest
+db-restore
 keyring
+pgbackrest
 
 [db]
 db1
