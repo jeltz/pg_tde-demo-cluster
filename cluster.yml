@@ -62,7 +62,9 @@
       openbao_architecture_map:
         x86_64: amd64
 
-- hosts: db
+- hosts:
+    - db
+    - db-restore
   tasks:
     - name: Add Percona repo
       ansible.builtin.apt:
@@ -157,6 +159,20 @@
         dest: /etc/pgbackrest.conf
         src: pgbackrest-pg.conf
 
+    - name: Add OpenBao root token
+      ansible.builtin.copy:
+        dest: /var/lib/postgresql/vault-token
+        src: fetch/keyring/root/.vault-token
+        owner: postgres
+        mode: "600"
+
+- hosts: db
+  tasks:
+    - name: Install Patroni
+      ansible.builtin.apt:
+        name: patroni
+        cache_valid_time: 1
+
     - name: Add Patroni config
       ansible.builtin.template:
         dest: /etc/patroni/config.yml
@@ -165,13 +181,6 @@
         owner: postgres
       vars:
         secret: hunter2
-
-    - name: Add OpenBao root token
-      ansible.builtin.copy:
-        dest: /var/lib/postgresql/vault-token
-        src: fetch/keyring/root/.vault-token
-        owner: postgres
-        mode: '0600'
 
     - name: Add cluster setup script
       ansible.builtin.copy:
@@ -260,6 +269,7 @@
       with_items:
         - db1
         - db2
+        - db-restore
 
     - name: Add PgBackRest config
       ansible.builtin.copy:
